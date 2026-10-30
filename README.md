@@ -78,3 +78,11 @@ CORS and the cross-domain login cookie both depend on this matching exactly.
 See `backend/README.md` sections 4 and 5. The definitions match the
 original PHP build exactly, so numbers won't shift if you compare the two
 implementations.
+
+## Optional: real Conversion Rate via Google Analytics 4
+
+Off by default — the Sales Overview page shows "Requires Google Analytics 4
+integration" until you connect it. See **`backend/README.md` section 6** for
+the full walkthrough (GA4 property ID, Google Cloud service account, and the
+two `.env` variables to set). A GA4 failure for any reason never breaks the
+rest of the dashboard — only the Conversion Rate card falls back.

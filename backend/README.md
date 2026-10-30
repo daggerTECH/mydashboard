@@ -151,3 +151,74 @@ Documented in full in the header comment of `src/services/aggregations.js` —
 the same definitions as the original PHP implementation (gross sales, net
 sales, average order value, refund handling, etc.), so figures stay
 consistent if you ever compare the two.
+
+## 6. Enabling real Conversion Rate (Google Analytics 4)
+
+By default the Sales Overview page shows "Requires Google Analytics 4
+integration" for Conversion Rate instead of a number — the dashboard never
+estimates a conversion rate from order counts alone. Follow these steps to
+turn it on for real: **Conversion rate = WooCommerce orders ÷ GA4 sessions**
+for the same date range.
+
+### a. Find your GA4 Property ID
+In Google Analytics: **Admin** (gear icon) → under the "Property" column,
+click **Property details**. The Property ID is the number shown near the top
+(e.g. `123456789`) — not the "G-XXXXXXX" Measurement ID, which is different.
+
+### b. Create a Google Cloud service account
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/), create
+   a project if you don't have one already (it's free, no billing required
+   for this).
+2. **APIs & Services → Library**, search for **Google Analytics Data API**,
+   click **Enable**.
+3. **APIs & Services → Credentials → Create Credentials → Service account**.
+   Give it any name (e.g. "xl-peptides-dashboard"), skip the optional role
+   grants, click **Done**.
+4. Click into the service account you just created → **Keys** tab →
+   **Add Key → Create new key → JSON**. This downloads a `.json` file —
+   this is the only copy of the private key, keep it safe.
+
+### c. Give that service account access to your GA4 property
+Back in Google Analytics: **Admin → Property Access Management → +  →
+Add users**. Paste in the service account's email address (it looks like
+`xl-peptides-dashboard@your-project.iam.gserviceaccount.com`, found in the
+JSON file as `client_email`), role **Viewer**, save.
+
+### d. Upload the key file to your Oracle Cloud instance
+```bash
+scp -i your-key.pem ga4-service-account.json ubuntu@<instance-ip>:~/xl-peptides-backend/
+ssh -i your-key.pem ubuntu@<instance-ip>
+cd ~/xl-peptides-backend
+chmod 600 ga4-service-account.json   # only the app's user can read it
+```
+
+### e. Update `.env` and restart
+```bash
+nano .env
+```
+Set:
+```
+GA4_ENABLED=true
+GA4_PROPERTY_ID=123456789
+GOOGLE_APPLICATION_CREDENTIALS=./ga4-service-account.json
+```
+Then:
+```bash
+pm2 restart xl-peptides-api
+```
+
+### f. Verify
+Reload the dashboard. The Conversion Rate card should now show a real
+percentage. If it still shows "Requires Google Analytics 4 integration,"
+check the backend's logs for the actual reason:
+```bash
+pm2 logs xl-peptides-api --lines 50
+```
+Common causes: the service account wasn't added to the GA4 property (step c),
+the property ID is the Measurement ID instead of the numeric Property ID
+(step a), or the JSON key path in `.env` doesn't match where you uploaded it.
+
+A GA4 failure for any reason — wrong property, revoked key, API quota, GA4
+itself being down — never breaks the rest of the Sales Overview page; every
+other KPI card keeps working normally and only Conversion Rate falls back to
+"unavailable."

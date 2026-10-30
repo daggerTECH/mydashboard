@@ -22,6 +22,7 @@
  */
 
 import { wooClient } from './wooClient.js';
+import { getSessions } from './ga4Client.js';
 
 export function isRevenueStatus(status) {
   return status === 'completed' || status === 'processing';
@@ -101,6 +102,13 @@ export async function salesSummary(range) {
   const prevGross = sum(prevRev.map((o) => o.subtotal + o.shipping + o.tax));
   const prevNet = prevGross - sum(prevRev.map((o) => o.discount)) - sum(prevOrders.map((o) => o.refunded));
 
+  // Conversion rate = WooCommerce orders ÷ GA4 sessions for the same period.
+  // Never estimated from order counts alone — only computed when a real GA4
+  // session count comes back (see ga4Client.js for the full fallback logic).
+  const sessions = await getSessions(range);
+  const conversionAvailable = sessions != null && sessions > 0;
+  const conversionRate = conversionAvailable ? round4(revOrders.length / sessions) : null;
+
   return {
     gross_sales: round2(gross), gross_sales_prev: round2(prevGross),
     net_sales: round2(net), net_sales_prev: round2(prevNet),
@@ -116,7 +124,9 @@ export async function salesSummary(range) {
     new_customers: null, // see customerSummary() for the full lookback calculation
     returning_customers: null,
     avg_customer_spend: emails.size ? round2(net / emails.size) : 0,
-    conversion_rate_available: false,
+    conversion_rate: conversionRate,
+    conversion_rate_available: conversionAvailable,
+    sessions: sessions ?? null,
   };
 }
 
