@@ -121,9 +121,8 @@ export async function attributionDetail(range, opts) {
   };
 }
 
-/** Net sales of orders attributed to the "Google Ads" channel for a range. */
-async function googleAdsChannelRevenue(range) {
-  const orders = await fetchOrdersInRange(range);
+/** Net sales of orders attributed to the "Google Ads" channel, from an already-fetched orders array. */
+function googleAdsChannelRevenueFromOrders(orders) {
   const revOrders = orders.filter((o) => isRevenueStatus(o.status) && o.channel === 'Google Ads');
   const gross = sum(revOrders.map((o) => o.subtotal + o.shipping + o.tax));
   const discount = sum(revOrders.map((o) => o.discount));
@@ -131,9 +130,8 @@ async function googleAdsChannelRevenue(range) {
   return { net: gross - discount - refunds, orders: revOrders.length };
 }
 
-/** Total store net sales across every channel (identical formula/number to the Sales Overview page). */
-async function totalStoreNetSales(range) {
-  const orders = await fetchOrdersInRange(range);
+/** Total store net sales across every channel, from an already-fetched orders array (identical formula to the Sales Overview page). */
+function totalStoreNetSalesFromOrders(orders) {
   const revOrders = orders.filter((o) => isRevenueStatus(o.status));
   const gross = sum(revOrders.map((o) => o.subtotal + o.shipping + o.tax));
   const discount = sum(revOrders.map((o) => o.discount));
@@ -142,14 +140,27 @@ async function totalStoreNetSales(range) {
 }
 
 export async function marketingSummary(range) {
-  const adsRows = await getCampaignDailyData(range);
-  const adsAvailable = adsRows != null;
+  const prevRange = previousEqualRange(range);
 
+  // The four independent, potentially-slow calls this KPI row needs — run
+  // concurrently instead of one after another. Each order-range is fetched
+  // exactly once (not re-fetched per metric), which matters for stores with
+  // real order volume: this endpoint used to serially re-fetch the same
+  // WooCommerce order history multiple times and could exceed the
+  // frontend's request timeout on a busy month.
+  const [adsRows, prevAdsRows, orders, prevOrders] = await Promise.all([
+    getCampaignDailyData(range),
+    getCampaignDailyData(prevRange),
+    fetchOrdersInRange(range),
+    fetchOrdersInRange(prevRange),
+  ]);
+
+  const adsAvailable = adsRows != null;
   const adSpend = adsAvailable ? sum(adsRows.map((r) => r.cost)) : null;
   const googleConvValue = adsAvailable ? sum(adsRows.map((r) => r.conversion_value)) : null;
 
-  const { net: googleAdsRevenueStore } = await googleAdsChannelRevenue(range);
-  const totalRevenue = await totalStoreNetSales(range);
+  const { net: googleAdsRevenueStore } = googleAdsChannelRevenueFromOrders(orders);
+  const totalRevenue = totalStoreNetSalesFromOrders(orders);
 
   const acosStore = adsAvailable ? safeDiv(adSpend, googleAdsRevenueStore) : null;
   const acosGoogle = adsAvailable ? safeDiv(adSpend, googleConvValue) : null;
@@ -158,11 +169,9 @@ export async function marketingSummary(range) {
   const gap = adsAvailable && googleConvValue != null ? round2(googleConvValue - googleAdsRevenueStore) : null;
 
   // Previous period, for the "change vs previous period" trend on each KPI card.
-  const prevRange = previousEqualRange(range);
-  const prevAdsRows = await getCampaignDailyData(prevRange);
   const prevAdSpend = prevAdsRows ? sum(prevAdsRows.map((r) => r.cost)) : null;
-  const { net: prevGoogleAdsRevenue } = await googleAdsChannelRevenue(prevRange);
-  const prevTotalRevenue = await totalStoreNetSales(prevRange);
+  const { net: prevGoogleAdsRevenue } = googleAdsChannelRevenueFromOrders(prevOrders);
+  const prevTotalRevenue = totalStoreNetSalesFromOrders(prevOrders);
   const prevAcosStore = prevAdsRows ? safeDiv(prevAdSpend, prevGoogleAdsRevenue) : null;
   const prevRoas = prevAdsRows ? safeDiv(prevGoogleAdsRevenue, prevAdSpend) : null;
 
@@ -187,10 +196,10 @@ export async function marketingSummary(range) {
 
 /** Daily/weekly/monthly ad spend vs. Google-Ads-channel store revenue, with ACOS as a derived line. */
 export async function adsTrend(range, granularity) {
-  const adsRows = await getCampaignDailyData(range);
+  const [adsRows, allOrders] = await Promise.all([getCampaignDailyData(range), fetchOrdersInRange(range)]);
   if (!adsRows) return { available: false, labels: [], spend: [], revenue: [], acos: [] };
 
-  const orders = (await fetchOrdersInRange(range)).filter((o) => isRevenueStatus(o.status) && o.channel === 'Google Ads');
+  const orders = allOrders.filter((o) => isRevenueStatus(o.status) && o.channel === 'Google Ads');
 
   const labels = []; const spend = []; const revenue = []; const acos = [];
   let cursor = new Date(range.start);
@@ -250,7 +259,7 @@ function matchesCampaign(wooCampaign, adCampaignId, adCampaignName) {
 }
 
 export async function campaignPerformance(range, opts) {
-  const adsRows = await getCampaignDailyData(range);
+  const [adsRows, allOrders] = await Promise.all([getCampaignDailyData(range), fetchOrdersInRange(range)]);
   if (!adsRows) return { available: false, rows: [], total: 0, page: opts.page, per_page: opts.perPage };
 
   const byCampaign = {};
@@ -269,7 +278,6 @@ export async function campaignPerformance(range, opts) {
   // pulled from EVERY order regardless of its current status — a fully
   // refunded order (status flips away from completed/processing) must still
   // pull down the campaign's revenue, or ACOS would look artificially good.
-  const allOrders = await fetchOrdersInRange(range);
   const googleAdsOrders = allOrders.filter((o) => o.channel === 'Google Ads');
   const revenueRecognizedOrders = googleAdsOrders.filter((o) => isRevenueStatus(o.status));
 

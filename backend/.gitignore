@@ -1,1 +1,16 @@
-node_modules/ .env *.log .DS_Store # Google service-account keys (GA4 integration) — never commit these *service-account*.json ga4-*.json /*.json !/package.json !/package-lock.json
+node_modules/
+.env
+*.log
+.DS_Store
+
+# Google service-account keys (GA4 integration) — never commit these.
+# Covers both our recommended filename AND Google's own default download
+# name, which looks like <project-id>-<random-hex>.json (no fixed prefix,
+# so this blanket rule is safer than trying to guess the pattern):
+*service-account*.json
+ga4-*.json
+# Any JSON file sitting at the project root that isn't an npm file — catches
+# Google Cloud's default key filename and similar accidental drops:
+/*.json
+!/package.json
+!/package-lock.json

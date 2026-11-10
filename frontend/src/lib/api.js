@@ -142,11 +142,16 @@ export const API = {
   refundedProducts: (range, limit = 8) => request('refunded-products', { ...range, limit }),
 
   // ---- Marketing & Ads -----------------------------------------
-  marketingSummary: (range) => request('marketing-summary', range),
-  salesByChannel: (range) => request('sales-by-channel', range),
+  // These can involve pulling a full month (or more) of order history plus a
+  // separate previous-period fetch, so they get a longer client-side timeout
+  // than the default 15s — the backend parallelizes the underlying work, but
+  // a very large, busy store's first (cold-cache) load can still take a
+  // while. Subsequent loads within the cache window are fast.
+  marketingSummary: (range) => request('marketing-summary', range, { timeoutMs: 30000 }),
+  salesByChannel: (range) => request('sales-by-channel', range, { timeoutMs: 30000 }),
   attributionDetail: (range, { page = 1, perPage = 20, search = '', channel = '' } = {}) =>
-    request('attribution-detail', { ...range, page, per_page: perPage, search, channel }),
-  adsTrend: (range, granularity) => request('ads-trend', { ...range, granularity }),
+    request('attribution-detail', { ...range, page, per_page: perPage, search, channel }, { timeoutMs: 30000 }),
+  adsTrend: (range, granularity) => request('ads-trend', { ...range, granularity }, { timeoutMs: 30000 }),
   campaignPerformance: (range, { page = 1, perPage = 20, search = '', sort = 'cost' } = {}) =>
-    request('campaign-performance', { ...range, page, per_page: perPage, search, sort }),
+    request('campaign-performance', { ...range, page, per_page: perPage, search, sort }, { timeoutMs: 30000 }),
 };
