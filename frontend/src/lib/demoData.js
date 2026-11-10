@@ -25,6 +25,79 @@
   ];
   const STATUSES = ['completed', 'processing', 'on-hold', 'pending', 'cancelled', 'refunded', 'failed'];
   const STATUS_WEIGHTS = [0.52, 0.18, 0.06, 0.05, 0.07, 0.09, 0.03];
+
+  // ---- Marketing & Ads demo data -----------------------------------------
+  const GADS_CAMPAIGNS = [
+    { id: '7001001', name: 'Brand_Search', type: 'Search', baseCost: 18, cpc: 0.55, ctr: 0.055, convRate: 0.09 },
+    { id: '7001002', name: 'Generic_Peptides_Search', type: 'Search', baseCost: 38, cpc: 1.05, ctr: 0.025, convRate: 0.035 },
+    { id: '7001003', name: 'Shopping_All_Products', type: 'Shopping', baseCost: 24, cpc: 0.65, ctr: 0.018, convRate: 0.028 },
+    { id: '7001004', name: 'Remarketing_Display', type: 'Display', baseCost: 9, cpc: 0.35, ctr: 0.004, convRate: 0.015 },
+  ];
+  // Weighted distribution of Channel across demo orders, per the brief's
+  // category list. Google Ads orders pick a campaign name from the list
+  // above so the demo Campaign Performance table has real matches.
+  const CHANNEL_WEIGHTS = [
+    ['Google Ads', 0.17], ['Google Organic', 0.20], ['Other Organic Search', 0.06],
+    ['Paid Social', 0.10], ['Organic Social', 0.05], ['Email', 0.08],
+    ['AI Assistants', 0.03], ['Referral', 0.07], ['Direct', 0.16], ['Unknown', 0.08],
+  ];
+  function pickChannel() {
+    const r = rng(); let acc = 0;
+    for (const [ch, w] of CHANNEL_WEIGHTS) { acc += w; if (r <= acc) return ch; }
+    return CHANNEL_WEIGHTS[CHANNEL_WEIGHTS.length - 1][0];
+  }
+  function genAttribution(channel) {
+    const blank = { sourceType: '', source: '', medium: '', campaign: '', referrer: '', deviceType: pick(['desktop', 'mobile', 'tablet']) };
+    switch (channel) {
+      case 'Google Ads': {
+        const camp = pick(GADS_CAMPAIGNS);
+        return { ...blank, sourceType: 'utm', source: 'google', medium: 'cpc', campaign: camp.name };
+      }
+      case 'Google Organic':
+        return { ...blank, sourceType: 'organic', source: 'google' };
+      case 'Other Organic Search':
+        return { ...blank, sourceType: 'organic', source: pick(['bing', 'duckduckgo']) };
+      case 'Paid Social':
+        return { ...blank, sourceType: 'utm', source: pick(['facebook', 'instagram', 'tiktok']), medium: 'cpc' };
+      case 'Organic Social':
+        return { ...blank, sourceType: 'referral', source: pick(['instagram', 'youtube', 'reddit']) };
+      case 'Email':
+        return { ...blank, sourceType: 'utm', medium: 'email', campaign: pick(['Monthly_Newsletter', 'Abandoned_Cart', 'Winback_Offer']) };
+      case 'AI Assistants':
+        return { ...blank, sourceType: 'referral', referrer: pick(['https://chatgpt.com/share/xyz', 'https://www.perplexity.ai/search/abc']) };
+      case 'Referral':
+        return { ...blank, sourceType: 'referral', referrer: pick(['https://partnerblog.example.com/review', 'https://healthforum.example.net/thread']) };
+      case 'Direct':
+        return { ...blank, sourceType: 'typein' };
+      default:
+        return blank; // Unknown — no attribution recorded at all
+    }
+  }
+
+  const gadsCacheByRange = new Map();
+  function genGoogleAdsData(range) {
+    const rangeKey = `gads|${range.start || ''}|${range.end || ''}`;
+    if (gadsCacheByRange.has(rangeKey)) return gadsCacheByRange.get(rangeKey);
+    const days = daysBetween(range);
+    const start = new Date(range.start + 'T00:00:00');
+    const rows = [];
+    for (let d = 0; d < days; d++) {
+      const date = new Date(start.getTime() + d * 86400000).toISOString().slice(0, 10);
+      for (const c of GADS_CAMPAIGNS) {
+        const cost = +(c.baseCost * (0.7 + rng() * 0.6)).toFixed(2);
+        const clicks = Math.max(1, Math.round(cost / c.cpc));
+        const impressions = Math.max(clicks, Math.round(clicks / c.ctr));
+        const conversions = +(clicks * c.convRate * (0.7 + rng() * 0.6)).toFixed(2);
+        // Google's own reported conversion value usually runs a bit ahead of
+        // what the store can attribute last-click — mirrors the brief's
+        // "Google usually claims more sales" note (see §4).
+        const conversion_value = +(conversions * 95 * (1.1 + rng() * 0.3)).toFixed(2);
+        rows.push({ date, campaign_id: c.id, campaign_name: c.name, campaign_type: c.type, cost, clicks, impressions, conversions, conversion_value });
+      }
+    }
+    gadsCacheByRange.set(rangeKey, rows);
+    return rows;
+  }
   const PAYMENTS = ['Credit Card (Stripe)', 'PayPal', 'Crypto (Coinbase Commerce)', 'Bank Transfer'];
   const FIRST = ['James', 'Maria', 'Alex', 'Sarah', 'Michael', 'Linda', 'David', 'Priya', 'Chris', 'Jasmine', 'Omar', 'Elena'];
   const LAST = ['Carter', 'Nguyen', 'Johnson', 'Patel', 'Garcia', 'Kim', 'Brown', 'Singh', 'Walker', 'Rossi'];
@@ -98,6 +171,7 @@
       const total = +(taxable + shipping + tax).toFixed(2);
       const status = weightedStatus();
       const refunded = status === 'refunded' ? +(total * (rng() < 0.4 ? 1 : 0.5)).toFixed(2) : 0;
+      const channel = pickChannel();
       orders.push({
         id: 10450 + i,
         date: date.toISOString(),
@@ -108,6 +182,8 @@
         payment_method: pick(PAYMENTS),
         status,
         notes: rng() < 0.2 ? 'Customer requested discreet packaging.' : '',
+        channel,
+        attribution: genAttribution(channel),
       });
     }
     orders.sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -292,6 +368,154 @@
         return ok(rows);
       }
 
+      case 'marketing-summary': {
+        const adsRows = genGoogleAdsData(range);
+        const adSpend = sum(adsRows.map((r) => r.cost));
+        const googleConvValue = sum(adsRows.map((r) => r.conversion_value));
+        const { net: gAdsRevenue } = googleAdsChannelRevenue(orders);
+        const totalRevenue = totalStoreNetSales(orders);
+
+        const prevRange = previousEqualRange(range);
+        const prevOrders = genOrders(prevRange);
+        const prevAdsRows = genGoogleAdsData(prevRange);
+        const prevAdSpend = sum(prevAdsRows.map((r) => r.cost));
+        const { net: prevGAdsRevenue } = googleAdsChannelRevenue(prevOrders);
+        const prevTotalRevenue = totalStoreNetSales(prevOrders);
+
+        return ok({
+          ads_available: true,
+          ad_spend: round2(adSpend), ad_spend_prev: round2(prevAdSpend),
+          google_ads_revenue_store: round2(gAdsRevenue), google_ads_revenue_store_prev: round2(prevGAdsRevenue),
+          acos_store: safeDiv(adSpend, gAdsRevenue, round4), acos_store_prev: safeDiv(prevAdSpend, prevGAdsRevenue, round4),
+          acos_google: safeDiv(adSpend, googleConvValue, round4),
+          roas: safeDiv(gAdsRevenue, adSpend, round4), roas_prev: safeDiv(prevGAdsRevenue, prevAdSpend, round4),
+          tacos: safeDiv(adSpend, totalRevenue, round4),
+          total_revenue: round2(totalRevenue), total_revenue_prev: round2(prevTotalRevenue),
+          google_conversion_value: round2(googleConvValue),
+          gap: round2(googleConvValue - gAdsRevenue),
+        });
+      }
+
+      case 'sales-by-channel': {
+        const revOrders = orders.filter((o) => isRevenueStatus(o.status));
+        const byChannel = {};
+        const ensure = (ch) => (byChannel[ch] ??= { channel: ch, orders: 0, gross: 0, discount: 0, refunds: 0 });
+        revOrders.forEach((o) => { const r = ensure(o.channel); r.orders++; r.gross += o.subtotal + o.shipping + o.tax; r.discount += o.discount; });
+        orders.forEach((o) => { if (o.refunded > 0) ensure(o.channel).refunds += o.refunded; });
+        const rows = Object.values(byChannel).map((r) => ({
+          channel: r.channel, orders: r.orders, gross: round2(r.gross),
+          net: round2(r.gross - r.discount - r.refunds),
+          aov: r.orders ? round2((r.gross - r.discount - r.refunds) / r.orders) : 0,
+        }));
+        const totalGross = sum(rows.map((r) => r.gross)) || 1;
+        rows.forEach((r) => { r.share = round4(r.gross / totalGross); });
+        const order = ['Google Ads', 'Google Organic', 'Other Organic Search', 'Paid Social', 'Organic Social', 'Email', 'AI Assistants', 'Referral', 'Direct', 'Mobile App', 'Admin / Manual', 'Unknown'];
+        rows.sort((a, b) => order.indexOf(a.channel) - order.indexOf(b.channel));
+        return ok(rows);
+      }
+
+      case 'attribution-detail': {
+        const revOrders = orders.filter((o) => isRevenueStatus(o.status));
+        const groups = {};
+        revOrders.forEach((o) => {
+          const a = o.attribution;
+          const key = [a.sourceType || '—', a.source || '—', a.medium || '—', a.campaign || '—', a.referrer || '—'].join('||');
+          groups[key] ??= { source_type: a.sourceType || '—', source: a.source || '—', medium: a.medium || '—', campaign: a.campaign || '—', referrer: a.referrer || '—', channel: o.channel, orders: 0, revenue: 0 };
+          groups[key].orders++; groups[key].revenue += o.total;
+        });
+        let rows = Object.values(groups).map((g) => ({ ...g, revenue: round2(g.revenue) }));
+        if (params.search) {
+          const q = params.search.toLowerCase();
+          rows = rows.filter((r) => [r.source, r.medium, r.campaign, r.referrer, r.channel].some((v) => v.toLowerCase().includes(q)));
+        }
+        if (params.channel) rows = rows.filter((r) => r.channel === params.channel);
+        rows.sort((a, b) => b.orders - a.orders);
+        const perPage = parseInt(params.per_page) || 20;
+        const page = parseInt(params.page) || 1;
+        const start = (page - 1) * perPage;
+        const unknownOrders = revOrders.filter((o) => o.channel === 'Unknown').length;
+        return ok({
+          rows: rows.slice(start, start + perPage), total: rows.length, page, per_page: perPage,
+          pct_unknown: revOrders.length ? round4(unknownOrders / revOrders.length) : 0,
+        });
+      }
+
+      case 'ads-trend': {
+        const adsRows = genGoogleAdsData(range);
+        const gAdsOrders = orders.filter((o) => isRevenueStatus(o.status) && o.channel === 'Google Ads');
+        const granularity = params.granularity || 'daily';
+        const labels = [], spend = [], revenue = [], acos = [];
+        let cursor = new Date(range.start + 'T00:00:00');
+        const end = new Date(range.end + 'T00:00:00');
+        const fmt = (d) => {
+          if (granularity === 'monthly') return d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+          if (granularity === 'weekly') return 'Wk of ' + d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        };
+        while (cursor <= end) {
+          let bucketStart, bucketEnd;
+          if (granularity === 'monthly') {
+            bucketStart = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+            bucketEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
+            cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+          } else if (granularity === 'weekly') {
+            bucketStart = new Date(cursor);
+            bucketEnd = new Date(cursor.getTime() + 6 * 86400000);
+            cursor = new Date(cursor.getTime() + 7 * 86400000);
+          } else {
+            bucketStart = new Date(cursor);
+            bucketEnd = new Date(cursor);
+            cursor = new Date(cursor.getTime() + 86400000);
+          }
+          const bucketSpend = sum(adsRows.filter((r) => { const d = new Date(r.date); return d >= bucketStart && d <= bucketEnd; }).map((r) => r.cost));
+          const bucketRevenue = sum(gAdsOrders.filter((o) => { const d = new Date(o.date.slice(0, 10)); return d >= bucketStart && d <= bucketEnd; }).map((o) => o.subtotal + o.shipping + o.tax - o.discount - o.refunded));
+          labels.push(fmt(bucketStart));
+          spend.push(round2(bucketSpend));
+          revenue.push(round2(bucketRevenue));
+          acos.push(safeDiv(bucketSpend, bucketRevenue, round4));
+        }
+        return ok({ available: true, labels, spend, revenue, acos });
+      }
+
+      case 'campaign-performance': {
+        const adsRows = genGoogleAdsData(range);
+        const byCampaign = {};
+        adsRows.forEach((r) => {
+          byCampaign[r.campaign_id] ??= { campaign_id: r.campaign_id, campaign_name: r.campaign_name, campaign_type: r.campaign_type, cost: 0, clicks: 0, impressions: 0, conversions: 0, conversion_value: 0 };
+          const c = byCampaign[r.campaign_id];
+          c.cost += r.cost; c.clicks += r.clicks; c.impressions += r.impressions; c.conversions += r.conversions; c.conversion_value += r.conversion_value;
+        });
+        const gAdsAllOrders = orders.filter((o) => o.channel === 'Google Ads');
+        const gAdsRevOrders = gAdsAllOrders.filter((o) => isRevenueStatus(o.status));
+        let rows = Object.values(byCampaign).map((c) => {
+          const matchedRevenue = gAdsRevOrders.filter((o) => o.attribution.campaign === c.campaign_name);
+          const matchedAny = gAdsAllOrders.filter((o) => o.attribution.campaign === c.campaign_name);
+          const gross = sum(matchedRevenue.map((o) => o.subtotal + o.shipping + o.tax - o.discount));
+          const refunds = sum(matchedAny.map((o) => o.refunded));
+          const storeRevenue = gross - refunds;
+          const storeOrders = matchedRevenue.length;
+          return {
+            campaign_id: c.campaign_id, campaign_name: c.campaign_name, campaign_type: c.campaign_type,
+            cost: round2(c.cost), clicks: c.clicks, impressions: c.impressions,
+            ctr: c.impressions ? round4(c.clicks / c.impressions) : null,
+            cpc: c.clicks ? round2(c.cost / c.clicks) : null,
+            store_orders: storeOrders, store_revenue: round2(storeRevenue),
+            acos_store: storeOrders ? safeDiv(c.cost, storeRevenue, round4) : null,
+            google_conversion_value: round2(c.conversion_value),
+            acos_google: safeDiv(c.cost, c.conversion_value, round4),
+            roas: storeOrders ? safeDiv(storeRevenue, c.cost, round4) : null,
+            matched: storeOrders > 0,
+          };
+        });
+        if (params.search) { const q = params.search.toLowerCase(); rows = rows.filter((r) => r.campaign_name.toLowerCase().includes(q)); }
+        const sortKey = params.sort || 'cost';
+        rows.sort((a, b) => (b[sortKey] ?? -Infinity) - (a[sortKey] ?? -Infinity));
+        const perPage = parseInt(params.per_page) || 20;
+        const page = parseInt(params.page) || 1;
+        const start = (page - 1) * perPage;
+        return ok({ available: true, rows: rows.slice(start, start + perPage), total: rows.length, page, per_page: perPage });
+      }
+
       case 'export':
         return ok({ note: 'Demo mode: CSV is generated client-side from the data above.' });
 
@@ -362,4 +586,33 @@
 
   function sum(arr) { return arr.reduce((a, b) => a + b, 0); }
   function ok(data) { return Promise.resolve({ ok: true, data, demo: true }); }
+  function round2(n) { return Math.round((n + Number.EPSILON) * 100) / 100; }
+  function round4(n) { return Math.round((n + Number.EPSILON) * 10000) / 10000; }
+  function safeDiv(numerator, denominator, roundFn) {
+    if (!denominator || numerator == null) return null;
+    return roundFn(numerator / denominator);
+  }
+  function googleAdsChannelRevenue(orders) {
+    const revOrders = orders.filter((o) => isRevenueStatus(o.status) && o.channel === 'Google Ads');
+    const gross = sum(revOrders.map((o) => o.subtotal + o.shipping + o.tax));
+    const discount = sum(revOrders.map((o) => o.discount));
+    const refunds = sum(orders.filter((o) => o.channel === 'Google Ads').map((o) => o.refunded));
+    return { net: gross - discount - refunds, orders: revOrders.length };
+  }
+  function totalStoreNetSales(orders) {
+    const revOrders = orders.filter((o) => isRevenueStatus(o.status));
+    const gross = sum(revOrders.map((o) => o.subtotal + o.shipping + o.tax));
+    const discount = sum(revOrders.map((o) => o.discount));
+    const refunds = sum(orders.map((o) => o.refunded));
+    return gross - discount - refunds;
+  }
+  function previousEqualRange(range) {
+    const start = new Date(range.start);
+    const end = new Date(range.end);
+    const days = Math.round((end - start) / 86400000) + 1;
+    const prevEnd = new Date(start.getTime() - 86400000);
+    const prevStart = new Date(prevEnd.getTime() - (days - 1) * 86400000);
+    const fmt = (d) => d.toISOString().slice(0, 10);
+    return { start: fmt(prevStart), end: fmt(prevEnd) };
+  }
 

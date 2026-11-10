@@ -23,6 +23,36 @@
 
 import { wooClient } from './wooClient.js';
 import { getSessions } from './ga4Client.js';
+import { classifyChannel } from './channelMapping.js';
+
+/**
+ * Pulls WooCommerce's built-in Order Attribution fields out of an order's
+ * meta_data array (present regardless of whether the store uses HPOS or
+ * legacy postmeta storage — the REST API normalizes both). Orders placed
+ * before Order Attribution was enabled (WC < 8.5) simply won't have these
+ * keys, and come back as "Unknown" — not an error.
+ */
+function extractAttribution(metaData) {
+  const map = {};
+  for (const m of metaData || []) {
+    if (typeof m.key === 'string' && m.key.startsWith('_wc_order_attribution_')) {
+      map[m.key.replace('_wc_order_attribution_', '')] = m.value;
+    }
+  }
+  const lower = (v) => (v == null ? '' : String(v).toLowerCase().trim());
+  return {
+    sourceType: lower(map.source_type),
+    source: lower(map.utm_source),
+    medium: lower(map.utm_medium),
+    campaign: map.utm_campaign || '', // kept original case — used for campaign-name matching against Google Ads
+    term: map.utm_term || '',
+    content: map.utm_content || '',
+    referrer: lower(map.referrer),
+    deviceType: lower(map.device_type),
+    sessionPages: map.session_pages || '',
+    sessionCount: map.session_count || '',
+  };
+}
 
 export function isRevenueStatus(status) {
   return status === 'completed' || status === 'processing';
@@ -39,6 +69,7 @@ export function normalizeOrder(o) {
   }));
 
   const refunded = (o.refunds || []).reduce((sum, r) => sum + Math.abs(Number(r.total || 0)), 0);
+  const attribution = extractAttribution(o.meta_data);
 
   return {
     id: o.id,
@@ -57,6 +88,8 @@ export function normalizeOrder(o) {
     payment_method: o.payment_method_title || 'Unknown',
     status: String(o.status || 'pending').replace(/^wc-/, ''),
     notes: o.customer_note || '',
+    attribution,
+    channel: classifyChannel(attribution),
   };
 }
 
@@ -69,7 +102,7 @@ export async function fetchOrdersInRange(range) {
     status: 'any',
     orderby: 'date',
     order: 'desc',
-    _fields: 'id,date_created,status,total,discount_total,shipping_total,total_tax,line_items,billing,payment_method_title,refunds,customer_note',
+    _fields: 'id,date_created,status,total,discount_total,shipping_total,total_tax,line_items,billing,payment_method_title,refunds,customer_note,meta_data',
   });
   return raw.map(normalizeOrder);
 }
@@ -394,7 +427,7 @@ export async function refundedProducts(range, limit) {
   return rows.map((p) => ({ name: p.name, amount: p.refunds }));
 }
 
-// ---- small helpers -----------------------------------------
-function sum(arr) { return arr.reduce((a, b) => a + b, 0); }
-function round2(n) { return Math.round((n + Number.EPSILON) * 100) / 100; }
-function round4(n) { return Math.round((n + Number.EPSILON) * 10000) / 10000; }
+// ---- small helpers (exported so marketing.js reuses identical rounding) ----
+export function sum(arr) { return arr.reduce((a, b) => a + b, 0); }
+export function round2(n) { return Math.round((n + Number.EPSILON) * 100) / 100; }
+export function round4(n) { return Math.round((n + Number.EPSILON) * 10000) / 10000; }

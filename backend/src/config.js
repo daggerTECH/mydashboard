@@ -40,6 +40,20 @@ export const config = {
     // standard env var name, not something this project invents.
   },
 
+  // Optional. Powers the Marketing & Ads tab's ad-spend side (cost, clicks,
+  // impressions, conversions per campaign). When disabled, that tab still
+  // shows Sales by Channel and Attribution Detail from WooCommerce alone —
+  // see backend/README.md §7 for the full OAuth + developer token setup.
+  googleAds: {
+    enabled: required('GOOGLE_ADS_ENABLED', 'false') === 'true',
+    clientId: required('GOOGLE_ADS_CLIENT_ID', ''),
+    clientSecret: required('GOOGLE_ADS_CLIENT_SECRET', ''),
+    developerToken: required('GOOGLE_ADS_DEVELOPER_TOKEN', ''),
+    refreshToken: required('GOOGLE_ADS_REFRESH_TOKEN', ''),
+    customerId: required('GOOGLE_ADS_CUSTOMER_ID', ''), // digits only, no dashes
+    loginCustomerId: required('GOOGLE_ADS_LOGIN_CUSTOMER_ID', ''), // only needed if accessed via an MCC/manager account
+  },
+
   rateLimit: {
     max: Number(process.env.RATE_LIMIT_MAX || 120),
     windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS || 60000),

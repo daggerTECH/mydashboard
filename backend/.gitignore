@@ -1,8 +1,1 @@
-node_modules/
-.env
-*.log
-.DS_Store
-
-# Google service-account keys (GA4 integration) — never commit these
-*service-account*.json
-ga4-*.json
+node_modules/ .env *.log .DS_Store # Google service-account keys (GA4 integration) — never commit these *service-account*.json ga4-*.json /*.json !/package.json !/package-lock.json

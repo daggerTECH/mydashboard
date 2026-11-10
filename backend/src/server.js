@@ -8,6 +8,7 @@ import { config, assertConfigured } from './config.js';
 import { requireAuth } from './middleware/auth.js';
 import authRoutes from './routes/auth.js';
 import dataRoutes from './routes/data.js';
+import marketingRoutes from './routes/marketing.js';
 import { WcApiError } from './services/wooClient.js';
 
 const app = express();
@@ -34,6 +35,7 @@ app.get('/healthz', (req, res) => res.json({ ok: true }));
 
 app.use('/api/auth', authRoutes);
 app.use('/api', requireAuth, dataRoutes);
+app.use('/api', requireAuth, marketingRoutes);
 
 // Central error handler — always returns JSON, never leaks stack traces.
 app.use((err, req, res, next) => {

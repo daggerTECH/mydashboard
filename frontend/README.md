@@ -82,7 +82,18 @@ The brand blue (`#26ACE2`) is set as `--blue` / `--brand` in `src/index.css`
 and used for the active sidebar item, primary buttons, and the "Gross sales"
 chart series, so it stays consistent everywhere.
 
-## 5. Build locally (sanity check before deploying)
+## 5. Marketing & Ads tab
+
+`src/pages/Marketing.jsx` needs no frontend configuration — it just calls
+the backend's marketing endpoints. Sales by Channel and Attribution Detail
+work as soon as the backend is connected to WooCommerce; the ad-spend
+cards (Ad spend, ACOS, ROAS, TACOS, Campaign Performance) show "Requires
+Google Ads integration" until Google Ads is connected on the backend side
+(see `backend/README.md` section 7). Demo mode generates realistic sample
+data for all of it, including a mix of matched and unmatched campaigns, so
+you can see the full layout before connecting anything real.
+
+## 6. Build locally (sanity check before deploying)
 
 ```bash
 npm run build

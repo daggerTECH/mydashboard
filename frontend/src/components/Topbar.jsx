@@ -9,6 +9,7 @@ const PAGE_TITLES = {
   products: ['Products', 'Product-level sales performance'],
   customers: ['Customers', 'Purchasing behavior and lifetime value'],
   refunds: ['Refunds & Discounts', 'Refund trends and discount impact'],
+  marketing: ['Marketing & Ads', 'Channel attribution, ad spend, and ACOS/ROAS/TACOS'],
   'payment-methods': ['Payment Methods', 'Sales performance by payment method'],
   'order-status': ['Order Status', 'Distribution of orders across statuses'],
   reports: ['Export Reports', 'Download CSV reports for the selected period'],

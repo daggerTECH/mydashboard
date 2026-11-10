@@ -222,3 +222,101 @@ A GA4 failure for any reason — wrong property, revoked key, API quota, GA4
 itself being down — never breaks the rest of the Sales Overview page; every
 other KPI card keeps working normally and only Conversion Rate falls back to
 "unavailable."
+
+## 7. Marketing & Ads tab (channel attribution + Google Ads)
+
+Adds channel attribution, Google Ads spend, and ACOS/ROAS/TACOS to the
+dashboard as a new "Marketing & Ads" section — no separate dashboard, same
+date-range filter as everything else. Two independent pieces:
+
+**Always on, no setup needed:** Sales by Channel and Attribution Detail read
+straight from WooCommerce's built-in Order Attribution meta fields (already
+present on every order since WooCommerce 8.5+), the same way the rest of this
+backend reads orders. Nothing to configure.
+
+**Optional, needs its own credentials:** Ad spend, ACOS, ROAS, TACOS, and the
+Campaign Performance table all need Google Ads connected. Off by default —
+those cards show "Requires Google Ads integration" until you set it up below.
+
+### a. Confirm your WooCommerce version supports Order Attribution
+WooCommerce → Plugins → check the WooCommerce version is 8.5 or later.
+Attribution data only exists for orders placed after it was enabled —
+earlier orders will always show "Unknown," which is correct, not a bug.
+
+### b. Check your Google Ads tracking template
+For per-campaign ACOS to work, your Google Ads final URL suffix needs to
+pass the campaign name (or ID) as a UTM parameter, e.g.:
+```
+utm_source=google&utm_medium=cpc&utm_campaign={campaignname}
+```
+In Google Ads: **Settings → Account settings → Tracking → Tracking template /
+Final URL suffix**. If this isn't set, Google Ads data will still show
+totals (ad spend, ACOS Google-reported), but the Campaign Performance table
+will show every campaign as "(unmatched)" — store orders/revenue/ACOS(Store)
+will be blank for all of them, because there's no way to tell which
+WooCommerce order came from which campaign.
+
+### c. Apply for Google Ads API access
+1. In your Google Ads account: **Tools & Settings → API Center**. Apply for a
+   **Developer Token** (Basic access is enough for reading your own account's
+   data; Google reviews applications, which can take a few days — start this
+   early).
+2. While waiting, you can use a **Test** developer token against a Google Ads
+   **test account** to build/verify the integration, then switch to the real
+   token once approved.
+
+### d. Create OAuth credentials and a refresh token
+1. [Google Cloud Console](https://console.cloud.google.com/) → **APIs &
+   Services → Credentials → Create Credentials → OAuth client ID** → type
+   **Desktop app**. This gives you a Client ID and Client Secret.
+2. Generate a one-time refresh token by running Google's official
+   [OAuth2 generation script](https://github.com/googleads/google-ads-python/blob/main/examples/authentication/generate_user_credentials.py)
+   (Python) or any OAuth2 "installed app" flow with scope
+   `https://www.googleapis.com/auth/adwords` — sign in with the Google
+   account that has access to the Google Ads account you want to read. This
+   produces a **refresh token** that doesn't expire until revoked.
+3. Find your **Customer ID** in the Google Ads UI (top right, format
+   `123-456-7890` — enter it in `.env` as digits only, no dashes). If you
+   access this account through a manager (MCC) account, also set
+   `GOOGLE_ADS_LOGIN_CUSTOMER_ID` to the MCC's customer ID.
+
+### e. Set the backend's `.env` and restart
+```
+GOOGLE_ADS_ENABLED=true
+GOOGLE_ADS_CLIENT_ID=...
+GOOGLE_ADS_CLIENT_SECRET=...
+GOOGLE_ADS_DEVELOPER_TOKEN=...
+GOOGLE_ADS_REFRESH_TOKEN=...
+GOOGLE_ADS_CUSTOMER_ID=1234567890
+```
+```bash
+pm2 restart xl-peptides-api
+```
+
+### f. Verify
+Reload the Marketing & Ads tab. Ad spend, ACOS, ROAS and TACOS should show
+real numbers. If a card still shows "Requires Google Ads integration," check
+`pm2 logs xl-peptides-api` for the actual error — same fail-soft pattern as
+GA4: a wrong customer ID, an unapproved developer token, or a revoked refresh
+token logs a clear message server-side and falls back gracefully rather than
+breaking the page.
+
+### Where each number comes from (the short note the brief's acceptance
+checklist asks for — see `src/services/marketing.js` for the full version
+with code):
+
+| Metric | Formula | Source |
+|---|---|---|
+| Channel | Classified from WooCommerce's `_wc_order_attribution_*` order meta — see `src/services/channelMapping.js` for the exact rules (the one editable place to adjust them) | WooCommerce |
+| Sales by Channel (gross/net/AOV) | Same gross/net sales formulas as the Sales Overview page, grouped by Channel | WooCommerce |
+| Ad spend | Sum of `metrics.cost_micros ÷ 1,000,000` across campaigns/days in range | Google Ads |
+| Google Ads revenue (store) | Net sales of orders whose Channel = "Google Ads" | WooCommerce |
+| **ACOS (Store)** — the headline number | Ad spend ÷ Google Ads revenue (store) | Both |
+| ACOS (Google-reported) | Ad spend ÷ Google Ads' own `metrics.conversions_value` | Google Ads |
+| Gap | Google-reported conversion value − store-attributed revenue; a sudden jump usually means tracking broke | Both |
+| ROAS | Inverse of ACOS (Store) | Both |
+| TACOS | Ad spend ÷ total store net sales (every channel) | Both |
+| Campaign-level matching | WooCommerce `utm_campaign` matched against Google Ads campaign name/ID (exact or substring match); unmatched campaigns show "—" for store columns rather than a guess | Both |
+
+Every ratio divides safely: zero orders, zero spend, or zero sessions shows
+"—" on the dashboard, never a fabricated 0% or a crash.

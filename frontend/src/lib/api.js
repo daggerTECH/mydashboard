@@ -140,4 +140,13 @@ export const API = {
   refundSummary: (range) => request('refund-summary', range),
   refundTrend: (range, granularity) => request('refund-trend', { ...range, granularity }),
   refundedProducts: (range, limit = 8) => request('refunded-products', { ...range, limit }),
+
+  // ---- Marketing & Ads -----------------------------------------
+  marketingSummary: (range) => request('marketing-summary', range),
+  salesByChannel: (range) => request('sales-by-channel', range),
+  attributionDetail: (range, { page = 1, perPage = 20, search = '', channel = '' } = {}) =>
+    request('attribution-detail', { ...range, page, per_page: perPage, search, channel }),
+  adsTrend: (range, granularity) => request('ads-trend', { ...range, granularity }),
+  campaignPerformance: (range, { page = 1, perPage = 20, search = '', sort = 'cost' } = {}) =>
+    request('campaign-performance', { ...range, page, per_page: perPage, search, sort }),
 };

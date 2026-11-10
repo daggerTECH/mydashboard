@@ -79,6 +79,16 @@ See `backend/README.md` sections 4 and 5. The definitions match the
 original PHP build exactly, so numbers won't shift if you compare the two
 implementations.
 
+## Optional: Marketing & Ads tab (channel attribution + Google Ads)
+
+A "Marketing & Ads" section showing which channel (Google Ads, organic
+search, social, email, AI assistants, etc.) drove each sale, plus — once
+connected — ad spend, ACOS, ROAS, and TACOS. Channel attribution works
+immediately with no setup (it reads WooCommerce's built-in Order
+Attribution data); Google Ads itself is optional and off by default. See
+**`backend/README.md` section 7** for the full walkthrough, including a
+short note on exactly where every number comes from.
+
 ## Optional: real Conversion Rate via Google Analytics 4
 
 Off by default — the Sales Overview page shows "Requires Google Analytics 4

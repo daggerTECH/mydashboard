@@ -13,6 +13,12 @@ const NAV_SECTIONS = [
     ],
   },
   {
+    label: 'Marketing',
+    items: [
+      { id: 'marketing', label: 'Marketing & Ads', icon: <><path d="M3 11l18-7-7 18-2-8-9-3z" /></> },
+    ],
+  },
+  {
     label: 'Reports',
     items: [
       { id: 'payment-methods', label: 'Payment Methods', icon: <><rect x="2" y="5" width="20" height="14" rx="2" /><line x1="2" y1="10" x2="22" y2="10" /></> },

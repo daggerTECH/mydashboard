@@ -11,6 +11,7 @@ import Orders from './pages/Orders.jsx';
 import Products from './pages/Products.jsx';
 import Customers from './pages/Customers.jsx';
 import Refunds from './pages/Refunds.jsx';
+import Marketing from './pages/Marketing.jsx';
 import PaymentMethods from './pages/PaymentMethods.jsx';
 import OrderStatus from './pages/OrderStatus.jsx';
 import Reports from './pages/Reports.jsx';
@@ -18,7 +19,7 @@ import Settings from './pages/Settings.jsx';
 
 const PAGES = {
   overview: Overview, revenue: Revenue, orders: Orders, products: Products,
-  customers: Customers, refunds: Refunds, 'payment-methods': PaymentMethods,
+  customers: Customers, refunds: Refunds, marketing: Marketing, 'payment-methods': PaymentMethods,
   'order-status': OrderStatus, reports: Reports, settings: Settings,
 };
 
