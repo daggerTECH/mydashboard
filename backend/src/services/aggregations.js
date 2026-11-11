@@ -118,7 +118,20 @@ export function previousEqualRange(range) {
 }
 
 export async function salesSummary(range) {
-  const orders = await fetchOrdersInRange(range);
+  const prevRange = previousEqualRange(range);
+
+  // Three independent calls — current-period orders, previous-period orders
+  // (needed for every "vs. previous period" trend arrow), and GA4 sessions —
+  // run concurrently instead of one after another. On a store with real
+  // order volume, fetching two full periods serially could exceed the
+  // frontend's request timeout; this was the same bug fixed in
+  // marketing.js's marketingSummary() and applies here for the same reason.
+  const [orders, prevOrders, sessions] = await Promise.all([
+    fetchOrdersInRange(range),
+    fetchOrdersInRange(prevRange),
+    getSessions(range),
+  ]);
+
   const revOrders = orders.filter((o) => isRevenueStatus(o.status));
 
   const gross = sum(revOrders.map((o) => o.subtotal + o.shipping + o.tax));
@@ -129,8 +142,6 @@ export async function salesSummary(range) {
   const refundedOrders = orders.filter((o) => o.refunded > 0).length;
   const emails = new Set(revOrders.map((o) => o.customer.email));
 
-  const prevRange = previousEqualRange(range);
-  const prevOrders = await fetchOrdersInRange(prevRange);
   const prevRev = prevOrders.filter((o) => isRevenueStatus(o.status));
   const prevGross = sum(prevRev.map((o) => o.subtotal + o.shipping + o.tax));
   const prevNet = prevGross - sum(prevRev.map((o) => o.discount)) - sum(prevOrders.map((o) => o.refunded));
@@ -138,7 +149,6 @@ export async function salesSummary(range) {
   // Conversion rate = WooCommerce orders ÷ GA4 sessions for the same period.
   // Never estimated from order counts alone — only computed when a real GA4
   // session count comes back (see ga4Client.js for the full fallback logic).
-  const sessions = await getSessions(range);
   const conversionAvailable = sessions != null && sessions > 0;
   const conversionRate = conversionAvailable ? round4(revOrders.length / sessions) : null;
 
@@ -364,16 +374,38 @@ export async function listCustomers(range, opts) {
   return { rows: rows.slice(offset, offset + opts.perPage), total, page: opts.page, per_page: opts.perPage };
 }
 
+/** Runs async `fn` over `items` with at most `limit` in flight at once — full
+ * concurrency without firing an unbounded number of requests at WooCommerce
+ * simultaneously (which could overwhelm a smaller store or trip its own rate
+ * limiting). Used by customerSummary's per-customer lookback below. */
+async function mapWithConcurrency(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
 export async function customerSummary(range) {
   const orders = await fetchOrdersInRange(range);
   const byEmail = aggregateCustomers(orders);
   const total = Object.keys(byEmail).length;
 
   // "New" vs "returning": for each customer, check whether WooCommerce has any
-  // earlier revenue-recognized order from the same billing email.
-  let newCount = 0;
-  for (const [email, c] of Object.entries(byEmail)) {
-    if (!email || email.startsWith('guest-')) { newCount++; continue; }
+  // earlier revenue-recognized order from the same billing email. This is
+  // one WooCommerce API call per unique customer, so for a store with many
+  // distinct buyers in the period, run these with bounded concurrency rather
+  // than one at a time — doing it fully serially (the original
+  // implementation) could mean dozens of sequential round-trips and exceed
+  // the frontend's request timeout on a busy period.
+  const entries = Object.entries(byEmail);
+  const isNewFlags = await mapWithConcurrency(entries, 8, async ([email, c]) => {
+    if (!email || email.startsWith('guest-')) return true;
     const earlier = await wooClient.get('orders', {
       search: c.email,
       before: `${range.start}T00:00:00`,
@@ -381,8 +413,9 @@ export async function customerSummary(range) {
       per_page: 1,
       _fields: 'id',
     });
-    if (!earlier || earlier.length === 0) newCount++;
-  }
+    return !earlier || earlier.length === 0;
+  });
+  const newCount = isNewFlags.filter(Boolean).length;
 
   return {
     total_customers: total,
