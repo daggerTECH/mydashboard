@@ -38,29 +38,89 @@ if (config.woocommerce.consumerKey.includes('xxxxxxxxxxxx') || !config.woocommer
   // but every real request will fail fast with a clear message below.
 }
 
-async function request(path, params = {}) {
+function assertConfigured() {
   if (!config.woocommerce.consumerKey || config.woocommerce.consumerKey.includes('xxxxxxxxxxxx')) {
     throw new WcApiError('WooCommerce API credentials are not configured. Set WC_CONSUMER_KEY/WC_CONSUMER_SECRET in the backend .env file.', 401);
   }
+}
+
+async function request(path, params = {}) {
+  const { data } = await requestWithHeaders(path, params);
+  return data;
+}
+
+/** Like request(), but also returns response headers — needed to read
+ * WordPress's X-WP-TotalPages header for the pagination fast-path below. */
+async function requestWithHeaders(path, params = {}) {
+  assertConfigured();
   try {
     const res = await client.get(path, { params });
-    return res.data;
+    return { data: res.data, headers: res.headers };
   } catch (err) {
     throw normalizeAxiosError(err);
   }
 }
 
-/** Fetch every page of a listing endpoint, up to a hard safety limit. */
+/** Same bounded-concurrency helper as aggregations.js::mapWithConcurrency —
+ * duplicated locally so this file has no dependency on that one. */
+async function mapWithConcurrency(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
+/**
+ * Fetch every page of a listing endpoint, up to a hard safety limit.
+ *
+ * Fetches page 1 first and reads WordPress's X-WP-TotalPages response
+ * header to learn how many pages actually exist, then fetches every
+ * remaining page CONCURRENTLY (bounded to 6 at a time) instead of one at a
+ * time — for a date range spanning many pages of orders (e.g. "This year"
+ * on a busy store), this is the difference between N sequential round-trips
+ * and roughly N/6. If that header is ever missing or unparseable (some
+ * WooCommerce setups/proxies can strip custom headers), falls back to the
+ * original, slower but guaranteed-correct sequential loop rather than risk
+ * silently dropping orders beyond page 1.
+ */
 async function getAllPages(path, params = {}, hardPageLimit = 20) {
-  let all = [];
-  let page = 1;
-  do {
-    const batch = await request(path, { ...params, page, per_page: 100 });
-    all = all.concat(batch);
-    page++;
-    if (batch.length < 100) break;
-  } while (page <= hardPageLimit);
-  return all;
+  const perPage = 100;
+  const first = await requestWithHeaders(path, { ...params, page: 1, per_page: perPage });
+  const firstBatch = first.data;
+
+  const totalPagesHeader = parseInt(first.headers?.['x-wp-totalpages'], 10);
+  const headerUsable = Number.isInteger(totalPagesHeader) && totalPagesHeader >= 1;
+
+  if (!headerUsable) {
+    // Fallback: proven sequential loop, continuing from page 2 (page 1 is
+    // already fetched above, so this never redoes work).
+    let all = firstBatch.slice();
+    let page = 2;
+    let lastBatch = firstBatch;
+    while (lastBatch.length === perPage && page <= hardPageLimit) {
+      const batch = await request(path, { ...params, page, per_page: perPage });
+      all = all.concat(batch);
+      lastBatch = batch;
+      page++;
+    }
+    return all;
+  }
+
+  const totalPages = Math.min(totalPagesHeader, hardPageLimit);
+  if (totalPages <= 1) return firstBatch;
+
+  const remainingPages = Array.from({ length: totalPages - 1 }, (_, i) => i + 2); // [2, 3, ..., totalPages]
+  const remainingBatches = await mapWithConcurrency(remainingPages, 6, (page) =>
+    request(path, { ...params, page, per_page: perPage })
+  );
+
+  return [firstBatch, ...remainingBatches].flat();
 }
 
 function cacheKey(prefix, path, params) {
