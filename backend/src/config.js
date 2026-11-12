@@ -48,6 +48,9 @@ export const config = {
     enabled: required('GOOGLE_ADS_ENABLED', 'false') === 'true',
     clientId: required('GOOGLE_ADS_CLIENT_ID', ''),
     clientSecret: required('GOOGLE_ADS_CLIENT_SECRET', ''),
+    // Google sunset developer tokens on 9 Sept 2026 — this is now optional
+    // and has no effect on whether the integration works. Left in only for
+    // anyone who still has one lying around; see googleAdsClient.js.
     developerToken: required('GOOGLE_ADS_DEVELOPER_TOKEN', ''),
     refreshToken: required('GOOGLE_ADS_REFRESH_TOKEN', ''),
     customerId: required('GOOGLE_ADS_CUSTOMER_ID', ''), // digits only, no dashes

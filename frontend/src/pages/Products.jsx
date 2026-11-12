@@ -61,7 +61,7 @@ export default function Products() {
         {topError && <ErrorState error={topError} heading="Chart data unavailable" />}
         {!topError && !top && <div className="skeleton" style={{ height: 320 }} />}
         {top && top.length === 0 && <EmptyState message="No product sales found for the selected reporting period." />}
-        {top && top.length > 0 && <BarChart labels={top.map((p) => p.name)} data={top.map((p) => p.gross)} color={COLORS.mint} horizontal />}
+        {top && top.length > 0 && <BarChart labels={top.map((p) => p.name)} data={top.map((p) => p.gross)} color={COLORS.mint} horizontal currency={currency} />}
       </div>
 
       <div className="section-heading"><h3>Product performance</h3><span className="hint">Units, revenue and refunds for the selected period</span></div>

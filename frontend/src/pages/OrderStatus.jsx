@@ -27,7 +27,7 @@ export default function OrderStatus() {
           <div className="panel__header"><div className="panel__title">Orders by status</div></div>
           {error && <ErrorState error={error} heading="Order status data could not be loaded" />}
           {!error && !rows && <div className="skeleton" style={{ height: 320 }} />}
-          {!error && rows && <BarChart labels={nonZero.map((r) => titleCase(r.status))} data={nonZero.map((r) => r.count)} color={COLORS.blue} />}
+          {!error && rows && <BarChart labels={nonZero.map((r) => titleCase(r.status))} data={nonZero.map((r) => r.count)} color={COLORS.blue} valueType="count" />}
         </div>
         <div className="card panel">
           <div className="panel__header"><div className="panel__title">Status breakdown</div></div>

@@ -161,7 +161,7 @@ export default function Marketing() {
           {!channelError && !channelRows && <div className="skeleton" style={{ height: 280 }} />}
           {channelRows && channelRows.length === 0 && <EmptyState message="No sales data found for the selected reporting period." />}
           {channelRows && channelRows.length > 0 && (
-            <BarChart labels={channelRows.map((r) => r.channel)} data={channelRows.map((r) => r.net)} color={COLORS.blue} horizontal />
+            <BarChart labels={channelRows.map((r) => r.channel)} data={channelRows.map((r) => r.net)} color={COLORS.blue} horizontal currency={currency} />
           )}
         </div>
         <div className="card table-card">

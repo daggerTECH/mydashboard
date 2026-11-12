@@ -26,6 +26,15 @@ export function fmtDate(iso) {
   );
 }
 
+const CURRENCY_SYMBOLS = { USD: '$', GBP: '£', EUR: '€', CAD: '$', AUD: '$', JPY: '¥' };
+/** Short symbol for compact axis ticks (e.g. "£1.2k") — Intl.NumberFormat
+ * doesn't combine "compact" notation cleanly with our own k/M suffixes, so
+ * this is a lightweight lookup instead, falling back to the currency code
+ * itself for anything not in the common list. */
+export function currencySymbol(currency) {
+  return CURRENCY_SYMBOLS[currency] || currency || '$';
+}
+
 export function titleCase(s) {
   return String(s)
     .replace(/-/g, ' ')

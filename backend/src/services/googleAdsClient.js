@@ -41,7 +41,14 @@ async function getClient() {
   client = new GoogleAdsApi({
     client_id: config.googleAds.clientId,
     client_secret: config.googleAds.clientSecret,
-    developer_token: config.googleAds.developerToken,
+    // Google sunset developer tokens on 9 Sept 2026 — API access now belongs
+    // to the Google Cloud project behind the OAuth client, and the token
+    // itself is ignored by Google's servers. The field still exists here
+    // only because the pinned library version (24.1.0, kept for Node 20
+    // compatibility — see package.json) sends this header unconditionally
+    // and would error on `undefined`; a harmless placeholder keeps it happy
+    // without requiring anyone to actually obtain a token anymore.
+    developer_token: config.googleAds.developerToken || 'unused-post-sunset',
   });
   return client;
 }
@@ -54,7 +61,10 @@ async function getClient() {
  */
 export async function getCampaignDailyData(range) {
   const ga = config.googleAds;
-  if (!ga.enabled || !ga.clientId || !ga.clientSecret || !ga.developerToken || !ga.refreshToken || !ga.customerId) {
+  // developerToken is intentionally NOT required here — see the comment on
+  // getClient() above. Google Ads API access is now a property of the
+  // Google Cloud project behind clientId/clientSecret, not a separate token.
+  if (!ga.enabled || !ga.clientId || !ga.clientSecret || !ga.refreshToken || !ga.customerId) {
     return null;
   }
 
@@ -90,7 +100,15 @@ export async function getCampaignDailyData(range) {
       }));
     });
   } catch (err) {
-    console.error('Google Ads request failed:', err.message); // eslint-disable-line no-console
+    // The google-ads-api library doesn't always throw a plain Error with a
+    // .message — genuine Ads API-level failures (as opposed to network/auth
+    // errors) often come back as a custom object with an `errors` array
+    // instead. Try several shapes so the real reason actually gets logged.
+    const detail =
+      err?.errors?.[0]?.message ||
+      err?.message ||
+      (() => { try { return JSON.stringify(err).slice(0, 500); } catch { return String(err); } })();
+    console.error('Google Ads request failed:', detail); // eslint-disable-line no-console
     return null;
   }
 }

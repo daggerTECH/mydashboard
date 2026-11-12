@@ -256,19 +256,32 @@ will show every campaign as "(unmatched)" — store orders/revenue/ACOS(Store)
 will be blank for all of them, because there's no way to tell which
 WooCommerce order came from which campaign.
 
-### c. Apply for Google Ads API access
-1. In your Google Ads account: **Tools & Settings → API Center**. Apply for a
-   **Developer Token** (Basic access is enough for reading your own account's
-   data; Google reviews applications, which can take a few days — start this
-   early).
-2. While waiting, you can use a **Test** developer token against a Google Ads
-   **test account** to build/verify the integration, then switch to the real
-   token once approved.
+### c. Get Google Ads API access for your Google Cloud project
+**Google sunset developer tokens on 9 September 2026.** API access is now a
+property of the Google Cloud project behind your OAuth credentials — not a
+separate token you apply for in the Google Ads UI. (If you were pointed at
+Google Ads → Tools & Settings → API Center, that page no longer processes new
+applications — everything moved to Cloud Console.) You can reuse the exact
+same Google Cloud project from the GA4 setup in section 6.
+
+1. [Google Cloud Console](https://console.cloud.google.com/apis/library/googleads.googleapis.com)
+   → select your project → **Enable** the Google Ads API. This immediately
+   gives the project **Test** access (test accounts only).
+2. Go to the [Google Ads API Overview page](https://console.cloud.google.com/google/ads-apis/overview)
+   for that same project → expand **Upgrade access level** → **Apply for
+   access**. This applies for **Explorer** access, which is often approved
+   automatically within minutes.
+3. Explorer access already covers **live, production accounts** — it's
+   capped at 2,880 operations/day, which is far more than this dashboard
+   needs (it makes a handful of calls per page load, cached for 5 minutes).
+   You do not need to apply for Basic access (which requires brand
+   verification and a longer review) unless you hit that cap, which is very
+   unlikely for read-only dashboard use.
 
 ### d. Create OAuth credentials and a refresh token
-1. [Google Cloud Console](https://console.cloud.google.com/) → **APIs &
-   Services → Credentials → Create Credentials → OAuth client ID** → type
-   **Desktop app**. This gives you a Client ID and Client Secret.
+1. In that same Cloud project: **APIs & Services → Credentials → Create
+   Credentials → OAuth client ID** → type **Desktop app**. This gives you a
+   Client ID and Client Secret.
 2. Generate a one-time refresh token by running Google's official
    [OAuth2 generation script](https://github.com/googleads/google-ads-python/blob/main/examples/authentication/generate_user_credentials.py)
    (Python) or any OAuth2 "installed app" flow with scope
@@ -280,12 +293,14 @@ WooCommerce order came from which campaign.
    access this account through a manager (MCC) account, also set
    `GOOGLE_ADS_LOGIN_CUSTOMER_ID` to the MCC's customer ID.
 
+You do **not** need a developer token for any of this — leave
+`GOOGLE_ADS_DEVELOPER_TOKEN` blank in `.env`.
+
 ### e. Set the backend's `.env` and restart
 ```
 GOOGLE_ADS_ENABLED=true
 GOOGLE_ADS_CLIENT_ID=...
 GOOGLE_ADS_CLIENT_SECRET=...
-GOOGLE_ADS_DEVELOPER_TOKEN=...
 GOOGLE_ADS_REFRESH_TOKEN=...
 GOOGLE_ADS_CUSTOMER_ID=1234567890
 ```
@@ -297,9 +312,9 @@ pm2 restart xl-peptides-api
 Reload the Marketing & Ads tab. Ad spend, ACOS, ROAS and TACOS should show
 real numbers. If a card still shows "Requires Google Ads integration," check
 `pm2 logs xl-peptides-api` for the actual error — same fail-soft pattern as
-GA4: a wrong customer ID, an unapproved developer token, or a revoked refresh
-token logs a clear message server-side and falls back gracefully rather than
-breaking the page.
+GA4: a wrong customer ID, a Cloud project without API access applied, or a
+revoked refresh token logs a clear message server-side and falls back
+gracefully rather than breaking the page.
 
 ### Where each number comes from (the short note the brief's acceptance
 checklist asks for — see `src/services/marketing.js` for the full version

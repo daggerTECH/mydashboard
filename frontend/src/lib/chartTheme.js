@@ -1,4 +1,11 @@
 import { Chart } from 'chart.js/auto';
+import ChartDataLabels from 'chartjs-plugin-datalabels';
+
+Chart.register(ChartDataLabels);
+// Registering the plugin turns it on for every chart by default — opt back
+// out globally, and only BarChart.jsx explicitly re-enables it, so line/
+// doughnut/combo charts don't get cluttered with numbers on every point.
+Chart.defaults.set('plugins.datalabels', { display: false });
 
 export const COLORS = {
   mint: '#33D6A6',
